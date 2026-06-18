@@ -24,7 +24,12 @@ Poi abilita GitHub Pages da **Settings > Pages > Deploy from branch > main / roo
 I dati restano nel browser. La georeferenziazione usa OpenStreetMap/Nominatim solo quando premi il pulsante dedicato.
 
 
-## Aggiornamento v14
+## Aggiornamento v15
 - Marker ordinato in rosso per maggiore leggibilità.
 - Andamento mese su mese per cliente.
 - Comparazione con anno precedente o con anno selezionato.
+
+
+## v15
+- Confronto mese su mese selezionabile per Venduto + Ordinato, Solo Venduto, Solo Ordinato e Trasporti.
+- La comparazione può usare la selezione principale oppure una modalità dedicata nel riquadro andamento cliente.
