@@ -22,3 +22,9 @@ Poi abilita GitHub Pages da **Settings > Pages > Deploy from branch > main / roo
 - clienti Excel
 
 I dati restano nel browser. La georeferenziazione usa OpenStreetMap/Nominatim solo quando premi il pulsante dedicato.
+
+
+## Aggiornamento v14
+- Marker ordinato in rosso per maggiore leggibilità.
+- Andamento mese su mese per cliente.
+- Comparazione con anno precedente o con anno selezionato.

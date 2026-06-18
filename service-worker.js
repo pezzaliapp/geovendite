@@ -1,4 +1,4 @@
-const CACHE_NAME = 'geovendite-pwa-v1';
+const CACHE_NAME = 'geovendite-pwa-v14';
 const APP_SHELL = [
   './',
   './index.html',
