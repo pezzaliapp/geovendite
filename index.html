@@ -26,7 +26,7 @@ label{display:block;color:var(--mut);font-weight:700;margin-bottom:8px} input,se
 </style>
 </head>
 <body>
-<header><div><h1>GeoVendite <span class="ver">PWA commerciale v14</span></h1><div class="sub">Import Excel locale: clienti, vendite, ordini, agenti multipli, trasporti, incidenza e comparazione mese su mese.</div></div><button class="danger" style="max-width:150px" onclick="clearAll()">Svuota dati</button></header>
+<header><div><h1>GeoVendite <span class="ver">PWA commerciale v16</span></h1><div class="sub">Import Excel locale: clienti, vendite, ordini, agenti multipli, trasporti, incidenza e comparazione mese su mese per venduto, ordinato, totale e trasporti.</div></div><button class="danger" style="max-width:150px" onclick="clearAll()">Svuota dati</button></header>
 <div class="wrap">
   <div class="card grid files">
     <div><label>Ordini Excel</label><input type="file" id="ordiniFile" accept=".xlsx,.xls" /></div>
@@ -139,11 +139,41 @@ function renderRanking(){rankTitle.textContent='Classifica '+(rankMode==='totale
 function renderDetail(){detail.innerHTML=filtered.map(c=>{const mm=metric(c), tm=topMachineTransport(c);return `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.agente||'')}</td><td>${escapeHtml(c.citta||'')}</td><td>${escapeHtml(c.provincia||'')}</td><td>${euro(mm.venduto)}</td><td>${euro(mm.ordinato)}</td><td>${euro(mm.venduto+mm.ordinato)}</td><td>${euro(transportValue(c))}</td><td>${pct(transportIncidence(c))}</td><td>${tm?escapeHtml(tm.mac)+' '+pct(tm.inc):''}</td><td>${mm.pezziVend+mm.pezziOrd}</td></tr>`}).join('')}
 const monthNames=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 function currentTrendMode(){return (typeof trendMode!=='undefined' && trendMode.value && trendMode.value!=='__main__')?trendMode.value:mode.value}
-function monthValue(mm,m=currentTrendMode()){return m==='venduto'?(mm.venduto||0):m==='ordinato'?(mm.ordinato||0):m==='trasporti'?(mm.trasporti||0):(mm.venduto||0)+(mm.ordinato||0)}
+function monthValue(mm,m=currentTrendMode()){
+  if(m==='venduto') return mm.venduto||0;
+  if(m==='ordinato') return mm.ordinato||0;
+  if(m==='trasporti') return (mm.trasportoVenduto||0)+(mm.trasportoOrdinato||0);
+  return (mm.venduto||0)+(mm.ordinato||0);
+}
 function updateTrendClientOptions(){ if(typeof trendClient==='undefined') return; const old=trendClient.value; const arr=[...filtered].sort((a,b)=>a.nome.localeCompare(b.nome)); trendClient.innerHTML=arr.map(c=>`<option value="${escapeHtml(c.codice)}">${escapeHtml(c.nome)} · ${escapeHtml(c.agente||'-')}</option>`).join('') || '<option value="">Nessun cliente visibile</option>'; if(old && arr.some(c=>c.codice===old)) trendClient.value=old; else if(arr[0]) trendClient.value=arr[0].codice; if(!trendBaseYear.value){ const y=year.value || ([...new Set(dataset.flatMap(c=>Object.keys(c.years)))].filter(x=>x!=='SENZA ANNO').sort().reverse()[0]||''); if(y) trendBaseYear.value=y; } }
 function selectedTrendYears(){ const base=trendBaseYear.value || year.value || ''; let comp=trendCompareYear.value; if(comp==='__prev__' && base && /^\d{4}$/.test(base)) comp=String(Number(base)-1); return {base,comp}; }
-function renderTrend(){ if(typeof trendBody==='undefined') return; const code=trendClient.value; const c=dataset.find(x=>x.codice===code) || filtered[0]; if(!c){trendBody.innerHTML=''; trendInfo.textContent='Nessun cliente visibile.'; return;} const {base,comp}=selectedTrendYears(); if(!base){trendBody.innerHTML=''; trendInfo.textContent='Seleziona un anno base per la comparazione.'; return;} const rows=[]; for(let i=1;i<=12;i++){ const mo=String(i).padStart(2,'0'); const mb=(c.years[base]?.months?.[mo]) || emptyMonth(); const mc=(c.years[comp]?.months?.[mo]) || emptyMonth(); const vb=monthValue(mb), vc=monthValue(mc); const diff=vb-vc; const perc=vc?diff/vc*100:(vb?100:0); rows.push(`<tr><td>${monthNames[i-1]}</td><td>${euro(vb)}</td><td>${euro(vc)}</td><td class="${diff>=0?'pos':'neg'}">${euro(diff)}</td><td class="${diff>=0?'pos':'neg'}">${pct(perc)}</td></tr>`); }
- const tm=currentTrendMode(); const label=tm==='venduto'?'solo venduto':tm==='ordinato'?'solo ordinato':tm==='trasporti'?'solo trasporti':'venduto + ordinato'; trendInfo.textContent=`Cliente: ${c.nome} · Agente: ${c.agente||'-'} · confronto ${base} vs ${comp||'n.d.'} · modalità ${label}`; trendBody.innerHTML=rows.join(''); }
+function renderTrend(){
+  if(typeof trendBody==='undefined') return;
+  const code=trendClient.value;
+  const c=dataset.find(x=>x.codice===code) || filtered[0];
+  if(!c){trendBody.innerHTML=''; trendInfo.textContent='Nessun cliente visibile.'; return;}
+  const {base,comp}=selectedTrendYears();
+  if(!base){trendBody.innerHTML=''; trendInfo.textContent='Seleziona un anno base per la comparazione.'; return;}
+  const rows=[];
+  let totBase=0, totComp=0;
+  for(let i=1;i<=12;i++){
+    const mo=String(i).padStart(2,'0');
+    const mb=(c.years[base]?.months?.[mo]) || emptyMonth();
+    const mc=(c.years[comp]?.months?.[mo]) || emptyMonth();
+    const vb=monthValue(mb), vc=monthValue(mc);
+    totBase+=vb; totComp+=vc;
+    const diff=vb-vc;
+    const perc=vc?diff/vc*100:(vb?100:0);
+    rows.push(`<tr><td>${monthNames[i-1]}</td><td>${euro(vb)}</td><td>${euro(vc)}</td><td class="${diff>=0?'pos':'neg'}">${euro(diff)}</td><td class="${diff>=0?'pos':'neg'}">${pct(perc)}</td></tr>`);
+  }
+  const totalDiff=totBase-totComp;
+  const totalPerc=totComp?totalDiff/totComp*100:(totBase?100:0);
+  rows.push(`<tr><th>Totale anno</th><th>${euro(totBase)}</th><th>${euro(totComp)}</th><th class="${totalDiff>=0?'pos':'neg'}">${euro(totalDiff)}</th><th class="${totalDiff>=0?'pos':'neg'}">${pct(totalPerc)}</th></tr>`);
+  const tm=currentTrendMode();
+  const label=tm==='venduto'?'solo venduto':tm==='ordinato'?'solo ordinato':tm==='trasporti'?'solo trasporti':'venduto + ordinato';
+  trendInfo.textContent=`Cliente: ${c.nome} · Agente: ${c.agente||'-'} · confronto ${base} vs ${comp||'n.d.'} · modalità ${label}`;
+  trendBody.innerHTML=rows.join('');
+}
 async function geocodeVisible(){const cache=JSON.parse(localStorage.getItem('geovendite_coords_v11')||'{}'); const todo=filtered.filter(c=>!cache[c.codice]&&c.indirizzo&&c.citta).slice(0,80); if(!todo.length){setStatus('Nessun indirizzo visibile da georeferenziare.');return} for(let i=0;i<todo.length;i++){const c=todo[i]; setStatus(`Georeferenziazione ${i+1}/${todo.length}: ${c.nome}`); const q=[c.indirizzo,c.citta,c.cap,c.provincia,'Italia'].filter(Boolean).join(', '); try{const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q='+encodeURIComponent(q); const res=await fetch(url,{headers:{'Accept':'application/json'}}); const js=await res.json(); if(js&&js[0]) cache[c.codice]={lat:Number(js[0].lat),lon:Number(js[0].lon),source:q}; localStorage.setItem('geovendite_coords_v11',JSON.stringify(cache)); await new Promise(r=>setTimeout(r,1100));}catch(e){console.warn(e)}} setStatus('Georeferenziazione completata.'); renderMap();}
 function exportCsv(){const rows=[['Cliente','Codice','Agente','Indirizzo','Citta','CAP','Provincia','Regione','Venduto','Ordinato','Totale','Trasporti','Incidenza trasporti su fatturato %','Macchina trasporto principale','Incidenza trasporti macchina %','Pezzi']].concat(filtered.map(c=>{const mm=metric(c);const tm=topMachineTransport(c); return [c.nome,c.codice,c.agente,c.indirizzo,c.citta,c.cap,c.provincia,c.regione,mm.venduto,mm.ordinato,mm.venduto+mm.ordinato,transportValue(c),transportIncidence(c),tm?tm.mac:'',tm?tm.inc:0,mm.pezziVend+mm.pezziOrd]})); const csv=rows.map(r=>r.map(x=>'"'+(''+(x??'')).replace(/"/g,'""')+'"').join(';')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='geovendite_filtrato.csv'; a.click();}
 function clearAll(){localStorage.removeItem('geovendite_coords_v11'); clienti=[];vendite=[];ordini=[];dataset=[];filtered=[];render();setStatus('Dati svuotati. Ricarica gli Excel.')} function setStatus(t,w=false){status.innerHTML=w?'<span class="warn">'+escapeHtml(t)+'</span>':escapeHtml(t)} function escapeHtml(s){return (s??'').toString().replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
