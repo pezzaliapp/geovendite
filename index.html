@@ -53,6 +53,7 @@ label{display:block;color:var(--mut);font-weight:700;margin-bottom:8px} input,se
     <button onclick="geocodeVisible()">Georeferenzia esatti visibili</button>
     <button class="secondary" onclick="exportCsv()">Esporta CSV filtrato</button>
     <button class="secondary" onclick="exportCsvAnni()">Esporta CSV confronto anni</button>
+    <button class="secondary" onclick="exportPdfAnni()">Esporta PDF confronto anni</button>
     <div class="status" id="status">Carica i tre Excel e importa.</div>
   </div>
   <div class="grid main">
@@ -182,16 +183,11 @@ function renderTrend(){
 }
 async function geocodeVisible(){const cache=JSON.parse(localStorage.getItem('geovendite_coords_v11')||'{}'); const todo=filtered.filter(c=>!cache[c.codice]&&c.indirizzo&&c.citta).slice(0,80); if(!todo.length){setStatus('Nessun indirizzo visibile da georeferenziare.');return} for(let i=0;i<todo.length;i++){const c=todo[i]; setStatus(`Georeferenziazione ${i+1}/${todo.length}: ${c.nome}`); const q=[c.indirizzo,c.citta,c.cap,c.provincia,'Italia'].filter(Boolean).join(', '); try{const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q='+encodeURIComponent(q); const res=await fetch(url,{headers:{'Accept':'application/json'}}); const js=await res.json(); if(js&&js[0]) cache[c.codice]={lat:Number(js[0].lat),lon:Number(js[0].lon),source:q}; localStorage.setItem('geovendite_coords_v11',JSON.stringify(cache)); await new Promise(r=>setTimeout(r,1100));}catch(e){console.warn(e)}} setStatus('Georeferenziazione completata.'); renderMap();}
 function exportCsv(){const T=v=>({__txt:(v??'').toString()}); const N=(v,d=2)=>{const n=Number(v); return Number.isFinite(n)?n.toFixed(d).replace('.',','):'';}; const capTxt=v=>{const s=(v??'').toString().trim(); return /^\d{1,4}$/.test(s)?s.padStart(5,'0'):s;}; const rows=[['Cliente','Codice','Agente','Indirizzo','Citta','CAP','Provincia','Regione','Venduto','Ordinato','Totale','Trasporti','Incidenza trasporti su fatturato %','Macchina trasporto principale','Incidenza trasporti macchina %','Pezzi']].concat(filtered.map(c=>{const tm=topMachineTransport(c);const _v=vendutoOf(c),_o=ordinatoOf(c); return [c.nome,T(c.codice),c.agente,c.indirizzo,c.citta,T(capTxt(c.cap)),c.provincia,c.regione,N(_v),N(_o),N(_v+_o),N(transportValue(c)),N(transportIncidence(c)),tm?tm.mac:'',N(tm?tm.inc:0),pezziVendOf(c)+pezziOrdOf(c)]})); const cell=x=>{if(x&&typeof x==='object'&&'__txt' in x){const s=x.__txt; return s===''?'""':'"=""'+s.replace(/"/g,'""""')+'"""';} return '"'+(''+(x??'')).replace(/"/g,'""')+'"';}; const csv='\uFEFF'+rows.map(r=>r.map(cell).join(';')).join('\r\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='geovendite_filtrato.csv'; a.click();}
-function exportCsvAnni(){
- const T=v=>({__txt:(v??'').toString()});
- const N=(v,d=2)=>{const n=Number(v); return (v===''||v==null||!Number.isFinite(n))?'':n.toFixed(d).replace('.',',');};
- const capTxt=v=>{const s=(v??'').toString().trim(); return /^\d{1,4}$/.test(s)?s.padStart(5,'0'):s;};
- const cell=x=>{if(x&&typeof x==='object'&&'__txt' in x){const s=x.__txt; return s===''?'""':'"=""'+s.replace(/"/g,'""""')+'"""';} return '"'+(''+(x??'')).replace(/"/g,'""')+'"';};
+function datiConfrontoAnni(){
  const mac=machine.value;
  // Clienti: stessi filtri della vista (agente, regione, provincia, macchina, ricerca) ma su tutti gli anni
  const oldYear=year.value; year.value=''; let clienti; try{ clienti=dataset.filter(matches).sort((a,b)=>clientValue(b)-clientValue(a)); } finally { year.value=oldYear; }
  const anni=[...new Set(clienti.flatMap(c=>Object.keys(c.years||{})))].filter(y=>y!=='SENZA ANNO').sort();
- if(!clienti.length||!anni.length){ setStatus('Nessun dato da esportare per il confronto anni.',true); return; }
  const val=(c,y)=>{ const m=(c.years||{})[y]; const z={v:0,o:0,tr:0,pz:0,topMac:'',topInc:''}; if(!m) return z;
    if(mac){ z.v=m.machineVenduto?.[mac]||0; z.o=m.machineOrdinato?.[mac]||0; z.tr=m.machineTransport?.[mac]||0; z.pz=(m.machinePezziV?.[mac]||0)+(m.machinePezziO?.[mac]||0); }
    else { z.v=m.venduto||0; z.o=m.ordinato||0; z.tr=(m.trasportoVenduto||0)+(m.trasportoOrdinato||0); z.pz=(m.pezziVend||0)+(m.pezziOrd||0); }
@@ -200,6 +196,15 @@ function exportCsvAnni(){
    if(best){ z.topMac=best.k; z.topInc=best.inc; } return z; };
  const inc=z=>(z.v+z.o)>0? z.tr/(z.v+z.o)*100 : 0;
  const dPct=(a,b)=>a>0? (b-a)/a*100 : '';
+ return {mac,clienti,anni,val,inc,dPct};
+}
+function exportCsvAnni(){
+ const T=v=>({__txt:(v??'').toString()});
+ const N=(v,d=2)=>{const n=Number(v); return (v===''||v==null||!Number.isFinite(n))?'':n.toFixed(d).replace('.',',');};
+ const capTxt=v=>{const s=(v??'').toString().trim(); return /^\d{1,4}$/.test(s)?s.padStart(5,'0'):s;};
+ const cell=x=>{if(x&&typeof x==='object'&&'__txt' in x){const s=x.__txt; return s===''?'""':'"=""'+s.replace(/"/g,'""""')+'"""';} return '"'+(''+(x??'')).replace(/"/g,'""')+'"';};
+ const {mac,clienti,anni,val,inc,dPct}=datiConfrontoAnni();
+ if(!clienti.length||!anni.length){ setStatus('Nessun dato da esportare per il confronto anni.',true); return; }
  const head=['Cliente','Codice','Agente','Indirizzo','Citta','CAP','Provincia','Regione'];
  for(const y of anni) head.push('Venduto '+y,'Ordinato '+y,'Totale '+y,'Trasporti '+y,'Incidenza trasporti su fatturato % '+y,'Pezzi '+y,'Macchina trasporto principale '+y,'Incidenza trasporti macchina % '+y);
  for(let i=1;i<anni.length;i++){ const a=anni[i-1], b=anni[i], t=b+' vs '+a; head.push('Diff. Venduto € '+t,'Diff. Venduto % '+t,'Diff. Ordinato € '+t,'Diff. Totale € '+t,'Diff. Totale % '+t,'Diff. Trasporti € '+t,'Diff. Trasporti % '+t,'Diff. Incidenza (punti %) '+t,'Diff. Pezzi '+t); }
@@ -212,6 +217,72 @@ function exportCsvAnni(){
  const csv='\uFEFF'+rows.map(r=>r.map(cell).join(';')).join('\r\n');
  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='geovendite_confronto_anni'+(mac?'_'+mac.replace(/[^\w-]+/g,'_'):'')+'.csv'; a.click();
 }
+function caricaScript(src){ return new Promise((res,rej)=>{ if(document.querySelector('script[src="'+src+'"]')) return res(); const el=document.createElement('script'); el.src=src; el.onload=()=>res(); el.onerror=()=>rej(new Error('Impossibile caricare '+src)); document.head.appendChild(el); }); }
+async function exportPdfAnni(){
+ const {mac,clienti,anni,val,inc,dPct}=datiConfrontoAnni();
+ if(!clienti.length||!anni.length){ setStatus('Nessun dato da esportare per il confronto anni.',true); return; }
+ try{
+  setStatus('Preparo il PDF...');
+  if(!(window.jspdf&&window.jspdf.jsPDF)) await caricaScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js');
+  if(!window.jspdf.jsPDF.API.autoTable) await caricaScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js');
+ }catch(e){ setStatus('Per creare il PDF serve la connessione internet (la libreria PDF non è ancora in cache).',true); return; }
+ const eu=n=>{const r=Math.round(n||0); return (r<0?'-':'')+Math.abs(r).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.')+' €';};
+ const pc=n=>(n===''||!Number.isFinite(Number(n)))?'-':Number(n).toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+ const sg=(n,f)=>(n===''||!Number.isFinite(Number(n)))?'-':(Number(n)>0?'+':'')+f(n);
+ const pt=n=>{ if(n===''||!Number.isFinite(n)) return '-'; if(Math.abs(n)<0.005) return '0,00 pt'; return (n>0?'+':'')+n.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})+' pt'; };
+ const dInc=(a,b)=>((a.v+a.o)>0&&(b.v+b.o)>0)? inc(b)-inc(a) : '';
+ const cut=(t,n)=>{t=(t??'').toString(); return t.length>n?t.slice(0,n-1)+'…':t;};
+ const somma=(zs)=>zs.reduce((a,z)=>({v:a.v+z.v,o:a.o+z.o,tr:a.tr+z.tr,pz:a.pz+z.pz}),{v:0,o:0,tr:0,pz:0});
+ const vis=anni.slice(-4); const ya=vis.length>1?vis[vis.length-2]:null, yb=vis[vis.length-1];
+ const perCliente=clienti.map(c=>({c,z:Object.fromEntries(anni.map(y=>[y,val(c,y)]))}));
+ const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+ const W=doc.internal.pageSize.getWidth();
+ // Intestazione
+ doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(20,40,70); doc.text('GeoVendite - Confronto anni',14,15);
+ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90);
+ doc.text('Generato il '+new Date().toLocaleDateString('it-IT')+' alle '+new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}),W-14,15,{align:'right'});
+ const ag=[...selectedAgents()]; const filtri=[ag.length?'Agenti: '+ag.join(', '):'Tutti gli agenti', region.value?'Regione: '+region.value:'', province.value?'Provincia: '+province.value:'', mac?'Macchina: '+mac:'Tutte le macchine', search.value?'Ricerca: "'+search.value+'"':'', 'Clienti: '+clienti.length, 'Anni: '+anni.join(', ')].filter(Boolean).join('  ·  ');
+ doc.text(doc.splitTextToSize(filtri,W-28),14,21);
+ const blu=[38,135,255], stile={font:'helvetica',fontSize:8,cellPadding:1.6}, testa={fillColor:[20,40,70],textColor:255,fontStyle:'bold',halign:'center'};
+ // colori variazioni: fatturato su = verde; incidenza su = rosso
+ const colora=(data,cols)=>{ if(data.section!=='body'&&data.section!=='foot') return; const tipo=cols[data.column.index]; if(!tipo) return; const t=(data.cell.raw??'').toString(); if(t.startsWith('+')) data.cell.styles.textColor=tipo==='inc'?[200,40,40]:[20,140,60]; else if(t.startsWith('-')&&t!=='-') data.cell.styles.textColor=tipo==='inc'?[20,140,60]:[200,40,40]; };
+ const titolo=(t,y)=>{ doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,40,70); doc.text(t,14,y); };
+ // 1) Riepilogo per anno
+ let y0=31; titolo('Riepilogo per anno',y0);
+ const tot={}; for(const y of anni) tot[y]=somma(perCliente.map(p=>p.z[y]));
+ const r1=anni.map((y,i)=>{ const z=tot[y], p=i?tot[anni[i-1]]:null; const attivi=perCliente.filter(q=>(q.z[y].v+q.z[y].o)>0).length;
+   return [y, attivi, eu(z.v), eu(z.o), eu(z.v+z.o), p?sg(dPct(p.v+p.o,z.v+z.o),pc):'-', eu(z.tr), pc(inc(z)), p?pt(dInc(p,z)):'-', z.pz]; });
+ doc.autoTable({startY:y0+2,head:[['Anno','Clienti attivi','Venduto','Ordinato','Totale','Var. totale','Trasporti','Incidenza trasp.','Var. incidenza','Pezzi']],body:r1,theme:'grid',styles:stile,headStyles:testa,columnStyles:{0:{halign:'center',fontStyle:'bold'},1:{halign:'right'},2:{halign:'right'},3:{halign:'right'},4:{halign:'right',fontStyle:'bold'},5:{halign:'right'},6:{halign:'right'},7:{halign:'right'},8:{halign:'right'},9:{halign:'right'}},didParseCell:d=>colora(d,{5:'val',8:'inc'}),margin:{left:14,right:14}});
+ // Colonne comuni per agenti e clienti
+ const varHead=ya?['Var. totale '+yb+' vs '+ya,'Var. incid. '+yb+' vs '+ya]:[];
+ const varCells=zmap=>{ if(!ya) return []; const a=zmap[ya], b=zmap[yb]; return [sg(dPct(a.v+a.o,b.v+b.o),pc), pt(dInc(a,b))]; };
+ const nota=anni.length>vis.length?' (ultimi '+vis.length+' anni)':'';
+ // 2) Riepilogo per agente
+ const perAgente={}; for(const p of perCliente){ const k=p.c.agente||'(senza agente)'; (perAgente[k]=perAgente[k]||[]).push(p); }
+ const agRows=Object.entries(perAgente).map(([k,ps])=>({k,n:ps.length,z:Object.fromEntries(vis.map(y=>[y,somma(ps.map(p=>p.z[y]))]))})).sort((a,b)=>(b.z[yb].v+b.z[yb].o)-(a.z[yb].v+a.z[yb].o));
+ y0=doc.lastAutoTable.finalY+10; if(y0>175){doc.addPage(); y0=15;} titolo('Riepilogo per agente'+nota,y0);
+ const hAg=['Agente','Clienti']; vis.forEach(y=>hAg.push('Totale '+y,'Trasporti '+y,'Incid. '+y)); hAg.push(...varHead);
+ const nFix=2, nCol=hAg.length, cs={0:{fontStyle:'bold',cellWidth:38}}; for(let i=1;i<nCol;i++) cs[i]={halign:'right'};
+ const varCols=ya?{[nCol-2]:'val',[nCol-1]:'inc'}:{};
+ doc.autoTable({startY:y0+2,head:[hAg],body:agRows.map(r=>[r.k,r.n,...vis.flatMap(y=>[eu(r.z[y].v+r.z[y].o),eu(r.z[y].tr),pc(inc(r.z[y]))]),...varCells(r.z)]),theme:'grid',styles:stile,headStyles:testa,columnStyles:cs,didParseCell:d=>colora(d,varCols),margin:{left:14,right:14}});
+ // 3) Dettaglio clienti
+ doc.addPage(); titolo('Dettaglio clienti'+nota+' - ordinati per totale '+yb,15);
+ const hCl=['Cliente','Agente','Prov.']; vis.forEach(y=>hCl.push('Totale '+y,'Trasp. '+y,'Incid. '+y)); hCl.push(...varHead);
+ const nC=hCl.length, csC={0:{cellWidth:vis.length>3?42:55},1:{cellWidth:vis.length>3?24:30},2:{halign:'center',cellWidth:11}}; for(let i=3;i<nC;i++) csC[i]={halign:'right'}; vis.forEach((y,k)=>{ csC[3+k*3]={halign:'right',cellWidth:19}; csC[4+k*3]={halign:'right',cellWidth:15}; });
+ const varC=ya?{[nC-2]:'val',[nC-1]:'inc'}:{};
+ const ordC=[...perCliente].sort((a,b)=>(b.z[yb].v+b.z[yb].o)-(a.z[yb].v+a.z[yb].o));
+ const bodyC=ordC.map(p=>[cut(p.c.nome,vis.length>3?30:40),cut(p.c.agente||'-',vis.length>3?16:20),p.c.provincia||'',...vis.flatMap(y=>{const z=p.z[y]; return [eu(z.v+z.o),eu(z.tr),pc(inc(z))];}),...varCells(p.z)]);
+ const footC=[[{content:'TOTALE',styles:{halign:'left'}},'','',...vis.flatMap(y=>[eu(tot[y].v+tot[y].o),eu(tot[y].tr),pc(inc(tot[y]))]),...varCells(tot)]];
+ doc.autoTable({startY:17,head:[hCl],body:bodyC,foot:footC,showFoot:'lastPage',theme:'striped',styles:{...stile,fontSize:7.5},headStyles:testa,footStyles:{fillColor:[225,232,245],textColor:[20,40,70],fontStyle:'bold',halign:'right'},alternateRowStyles:{fillColor:[245,248,252]},columnStyles:csC,didParseCell:d=>colora(d,varC),margin:{left:10,right:10,top:15}});
+ // Note e numeri di pagina
+ let yn=doc.lastAutoTable.finalY+6; if(yn>195){doc.addPage(); yn=15;}
+ doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(110);
+ doc.text(doc.splitTextToSize('Totale = venduto + ordinato. Incidenza = trasporti addebitati / totale. Var. incidenza in punti percentuali: in verde se l\'incidenza scende, in rosso se sale. Le variazioni sono indicate con "-" quando in uno dei due anni il fatturato è zero.'+(mac?' Tutti i valori si riferiscono alla sola macchina '+mac+'.':''),W-28),14,yn);
+ const np=doc.getNumberOfPages(); for(let i=1;i<=np;i++){ doc.setPage(i); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140); doc.text('GeoVendite · pagina '+i+' di '+np,W/2,doc.internal.pageSize.getHeight()-6,{align:'center'}); }
+ doc.save('geovendite_confronto_anni'+(mac?'_'+mac.replace(/[^\w-]+/g,'_'):'')+'.pdf');
+ setStatus('PDF confronto anni creato.');
+}
+
 
 function clearAll(){localStorage.removeItem('geovendite_coords_v11'); clienti=[];vendite=[];ordini=[];dataset=[];filtered=[];render();setStatus('Dati svuotati. Ricarica gli Excel.')} function setStatus(t,w=false){status.innerHTML=w?'<span class="warn">'+escapeHtml(t)+'</span>':escapeHtml(t)} function escapeHtml(s){return (s??'').toString().replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
 render();
